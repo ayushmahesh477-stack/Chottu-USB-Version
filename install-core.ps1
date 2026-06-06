@@ -460,89 +460,75 @@ if (Test-Path "$USB_Drive\ollama\ollama.exe") {
 }
 
 # =================================================================
-# STEP 6 — Download and Install Chottu Interface (Fully Automated)
+# STEP 6 — Download Chottu from GitHub Release (NO "AnythingLLM" visible!)
 # =================================================================
 Write-Host ""
-Write-Host "[6/6] Downloading and installing Chottu Chat Interface..." -ForegroundColor Yellow
+Write-Host "[6/6] Downloading Chottu Chat Interface..." -ForegroundColor Yellow
 
-$ChottuURL = "https://cdn.anythingllm.com/latest/AnythingLLMDesktop.exe"
-$InstallerDest = "$USB_Drive\installer_data\ChottuInstaller.exe"
+# !!! CHANGE THIS TO YOUR GITHUB RELEASE URL !!!
+$CHOTTU_DOWNLOAD_URL = "https://github.com/ayushmahesh477-stack/Chottu-AI/releases/download/v1.0.0/Chottu.zip"
+
+$TempFile = "$USB_Drive\installer_data\Chottu.zip"
 $ChottuExe = "$USB_Drive\chottu\Chottu.exe"
 
-# Check if Chottu is already installed
+# Check if Chottu already exists
 if (Test-Path $ChottuExe -PathType Leaf) {
     $size = [math]::Round((Get-Item $ChottuExe).Length / 1MB, 2)
     Write-Host "      Chottu already installed! ($size MB)" -ForegroundColor Green
 } else {
     # Create chottu folder if it doesn't exist
-    if (-Not (Test-Path "$USB_Drive\chottu")) {
+    if (-not (Test-Path "$USB_Drive\chottu")) {
         New-Item -ItemType Directory -Force -Path "$USB_Drive\chottu" | Out-Null
     }
     
-    # Download the installer
-    Write-Host "      Downloading Chottu installer..." -ForegroundColor Magenta
-    curl.exe -L --ssl-no-revoke --progress-bar $ChottuURL -o $InstallerDest
+    Write-Host "      Downloading Chottu from GitHub Release..." -ForegroundColor Magenta
     
-    if (Test-Path $InstallerDest) {
-        Write-Host "      Installing Chottu (silent mode)..." -ForegroundColor Yellow
+    # Download using PowerShell
+    try {
+        Invoke-WebRequest -Uri $CHOTTU_DOWNLOAD_URL -OutFile $TempFile -UseBasicParsing
+        Write-Host "      Download complete!" -ForegroundColor Green
+    } catch {
+        Write-Host "      PowerShell download failed, trying curl..." -ForegroundColor Yellow
+        curl.exe -L --ssl-no-revoke --progress-bar -o $TempFile $CHOTTU_DOWNLOAD_URL
+    }
+    
+    if (Test-Path $TempFile) {
+        Write-Host "      Extracting Chottu..." -ForegroundColor Yellow
         
-        # Run installer silently to a temporary location first
-        $TempExtract = "$env:TEMP\ChottuInstall"
-        if (Test-Path $TempExtract) { Remove-Item -Recurse -Force $TempExtract }
-        New-Item -ItemType Directory -Force -Path $TempExtract | Out-Null
-        
-        # Extract the installer using 7zip method (works without installing)
+        # Extract the zip file
         try {
-            # Method 1: Use expand (built into Windows)
-            & "expand" $InstallerDest -F:* $TempExtract -R > $null 2>&1
-            
-            # Find the actual exe in extracted files
-            $ExtractedExe = Get-ChildItem -Path $TempExtract -Recurse -Filter "*.exe" | Where-Object { $_.Name -like "*AnythingLLM*" } | Select-Object -First 1
-            
-            if ($ExtractedExe) {
-                Copy-Item $ExtractedExe.FullName -Destination "$USB_Drive\chottu\Chottu.exe" -Force
-                Write-Host "      Chottu installed successfully!" -ForegroundColor Green
-            } else {
-                # Fallback: Run installer in quiet mode
-                Write-Host "      Running installer in quiet mode..." -ForegroundColor Yellow
-                Start-Process -FilePath $InstallerDest -ArgumentList "/S /D=$USB_Drive\chottu" -Wait -NoNewWindow
-                
-                # Rename if needed
-                if (Test-Path "$USB_Drive\chottu\AnythingLLM.exe") {
-                    Rename-Item -Path "$USB_Drive\chottu\AnythingLLM.exe" -NewName "Chottu.exe" -Force
-                    Write-Host "      Chottu installed and renamed!" -ForegroundColor Green
-                }
-            }
+            Expand-Archive -Path $TempFile -DestinationPath "$USB_Drive\chottu" -Force
+            Write-Host "      Extraction complete!" -ForegroundColor Green
         } catch {
-            # Last resort: Run installer normally (user sees the window)
-            Write-Host "      Launching installer (please complete manually)..." -ForegroundColor Yellow
-            Write-Host "      IMPORTANT: Install to: $USB_Drive\chottu" -ForegroundColor Cyan
-            Start-Process -FilePath $InstallerDest -Wait
-            
-            if (Test-Path "$USB_Drive\chottu\AnythingLLM.exe") {
-                Rename-Item -Path "$USB_Drive\chottu\AnythingLLM.exe" -NewName "Chottu.exe" -Force
-                Write-Host "      Chottu installed successfully!" -ForegroundColor Green
+            # Fallback extraction using Windows Shell
+            Write-Host "      Using fallback extraction..." -ForegroundColor Yellow
+            $shell = New-Object -ComObject Shell.Application
+            $zip = $shell.NameSpace($TempFile)
+            $dest = $shell.NameSpace("$USB_Drive\chottu")
+            $dest.CopyHere($zip.Items(), 16)
+        }
+        
+        # Verify Chottu.exe exists
+        if (Test-Path $ChottuExe) {
+            $size = [math]::Round((Get-Item $ChottuExe).Length / 1MB, 2)
+            Write-Host "      ✓ Chottu installed successfully! ($size MB)" -ForegroundColor Green
+        } else {
+            # Search for Chottu.exe in subfolders
+            $foundExe = Get-ChildItem -Path "$USB_Drive\chottu" -Recurse -Filter "Chottu.exe" | Select-Object -First 1
+            if ($foundExe) {
+                Move-Item -Path $foundExe.FullName -Destination $ChottuExe -Force
+                Write-Host "      ✓ Chottu moved to correct location!" -ForegroundColor Green
+            } else {
+                Write-Host "      ERROR: Chottu.exe not found after extraction!" -ForegroundColor Red
+                $downloadErrors += "Chottu Interface"
             }
         }
         
         # Cleanup
-        if (Test-Path $TempExtract) { Remove-Item -Recurse -Force $TempExtract -ErrorAction SilentlyContinue }
-        Remove-Item $InstallerDest -Force -ErrorAction SilentlyContinue
-        
-        # Verify installation
-        if (Test-Path $ChottuExe) {
-            Write-Host "      ✓ Chottu is ready at: $USB_Drive\chottu\Chottu.exe" -ForegroundColor Green
-        } else {
-            Write-Host "      WARNING: Could not automatically install Chottu." -ForegroundColor Yellow
-            Write-Host "      Please run the installer manually and select: $USB_Drive\chottu" -ForegroundColor Yellow
-            Write-Host "      Then rename AnythingLLM.exe to Chottu.exe" -ForegroundColor Yellow
-            
-            # Open the installer for manual installation
-            Start-Process -FilePath $InstallerDest
-            pause
-        }
+        Remove-Item $TempFile -Force -ErrorAction SilentlyContinue
     } else {
-        Write-Host "      ERROR: Failed to download Chottu installer!" -ForegroundColor Red
+        Write-Host "      ERROR: Failed to download Chottu from GitHub!" -ForegroundColor Red
+        Write-Host "      URL: $CHOTTU_DOWNLOAD_URL" -ForegroundColor DarkGray
         $downloadErrors += "Chottu Interface"
     }
 }
